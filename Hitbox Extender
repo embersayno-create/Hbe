@@ -1,5 +1,22 @@
+local saveFile = "x9q5m_hitbox_size.txt"
 local ballSize = 5.5
 local originalSizes = {}
+
+pcall(function()
+    if isfile(saveFile) then
+        local saved = tonumber(readfile(saveFile))
+
+        if saved and saved >= 0 and saved <= 30 then
+            ballSize = saved
+        end
+    end
+end)
+
+local function saveSize()
+    pcall(function()
+        writefile(saveFile, string.format("%.1f", ballSize))
+    end)
+end
 
 local function updateBalls()
     local assets = game:GetService("ReplicatedStorage")
@@ -22,7 +39,12 @@ local function updateBalls()
                     originalSizes[id] = originalSizes[id] or part.Size
 
                     local size = originalSizes[id]
-                    largest = math.max(largest, size.X, size.Y, size.Z)
+                    largest = math.max(
+                        largest,
+                        size.X,
+                        size.Y,
+                        size.Z
+                    )
 
                     parts[#parts + 1] = part
                 end
@@ -45,12 +67,15 @@ local function updateBalls()
     end
 end
 
+updateBalls()
+
 UI.AddTab("Hitbox Extender", function(tab)
     local main = tab:Section("Main Settings", "Left")
 
     main:Text("Hitbox Extender")
     main:Text("made by x9q5m")
     main:Text("0 = Original size")
+    main:Text("Ball size saves automatically")
     main:Spacing()
 
     main:SliderFloat(
@@ -63,6 +88,7 @@ UI.AddTab("Hitbox Extender", function(tab)
         function(value)
             ballSize = value
             updateBalls()
+            saveSize()
         end
     )
 
@@ -70,12 +96,13 @@ UI.AddTab("Hitbox Extender", function(tab)
         UI.SetValue("ball_size", 0)
         ballSize = 0
         updateBalls()
+        saveSize()
     end)
 end)
 
 task.spawn(function()
     while true do
-        updateBalls()
         task.wait(1.5)
+        updateBalls()
     end
 end)
