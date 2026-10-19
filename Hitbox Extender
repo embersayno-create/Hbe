@@ -1,22 +1,36 @@
-local saveFile = "x9q5m_hitbox_size.txt"
-local ballSize = 5.5
-local originalSizes = {}
+local TITLE = "Hitbox Extender"
+local SAVE_FILE = "x9q5m_hitbox_size.txt"
+local STATE_KEY = "x9q5m_hitbox_controller"
 
-pcall(function()
-    if isfile(saveFile) then
-        local saved = tonumber(readfile(saveFile))
+local environment = getfenv()
+local previous = environment[STATE_KEY]
 
-        if saved and saved >= 0 and saved <= 30 then
-            ballSize = saved
-        end
-    end
-end)
+local state = {
+    size = 5.5,
+    originals = previous and previous.originals or {},
+    generation = previous and previous.generation + 1 or 1
+}
 
-local function saveSize()
+if previous then
+    state.size = previous.size
+else
     pcall(function()
-        writefile(saveFile, string.format("%.1f", ballSize))
+        if isfile(SAVE_FILE) then
+            local saved = tonumber(readfile(SAVE_FILE))
+
+            if saved and saved >= 0 and saved <= 30 then
+                state.size = saved
+            end
+        end
     end)
 end
+
+environment[STATE_KEY] = state
+
+local sliderId = "x9q5m_hitbox_size_" .. state.generation
+local initialSliderValue = math.floor(state.size * 10 + 0.5)
+
+state.size = initialSliderValue / 10
 
 local function updateBalls()
     local assets = game:GetService("ReplicatedStorage")
@@ -25,6 +39,8 @@ local function updateBalls()
 
     local balls = assets:FindFirstChild("Ball")
     if not balls then return end
+
+    local requestedSize = state.size
 
     for _, model in balls:GetChildren() do
         if model.ClassName == "Model" then
@@ -36,9 +52,13 @@ local function updateBalls()
                     or part.ClassName == "Part" then
 
                     local id = part.Address
-                    originalSizes[id] = originalSizes[id] or part.Size
+                    local size = state.originals[id]
 
-                    local size = originalSizes[id]
+                    if not size then
+                        size = part.Size
+                        state.originals[id] = size
+                    end
+
                     largest = math.max(
                         largest,
                         size.X,
@@ -51,10 +71,12 @@ local function updateBalls()
             end
 
             if largest > 0 then
-                local scale = ballSize == 0 and 1 or ballSize / largest
+                local scale = requestedSize == 0
+                    and 1
+                    or requestedSize / largest
 
                 for _, part in parts do
-                    local size = originalSizes[part.Address]
+                    local size = state.originals[part.Address]
 
                     part.Size = Vector3.new(
                         size.X * scale,
@@ -67,42 +89,77 @@ local function updateBalls()
     end
 end
 
-updateBalls()
+local function saveSize()
+    local success, message = pcall(function()
+        writefile(SAVE_FILE, string.format("%.1f", state.size))
+    end)
 
-UI.AddTab("Hitbox Extender", function(tab)
+    if not success then
+        print("Hitbox Extender: could not save size:", message)
+    end
+end
+
+UI.RemoveTab(TITLE)
+
+local sliderInitialized = false
+
+UI.AddTab(TITLE, function(tab)
     local main = tab:Section("Main Settings", "Left")
 
-    main:Text("Hitbox Extender")
+    main:Text(TITLE)
     main:Text("made by x9q5m")
+    main:Text("Size setting: 55 = 5.5 studs")
     main:Text("0 = Original size")
-    main:Text("Ball size saves automatically")
     main:Spacing()
 
-    main:SliderFloat(
-        "ball_size",
-        "Ball Size",
+    main:SliderInt(
+        sliderId,
+        "Size (tenths of a stud)",
         0,
-        30,
-        ballSize,
-        "%.1f",
-        function(value)
-            ballSize = value
-            updateBalls()
-            saveSize()
-        end
+        300,
+        initialSliderValue
     )
 
+    if not sliderInitialized then
+        UI.SetValue(sliderId, initialSliderValue)
+        sliderInitialized = true
+    end
+
     main:Button("Reset to Original Size", function()
-        UI.SetValue("ball_size", 0)
-        ballSize = 0
-        updateBalls()
-        saveSize()
+        UI.SetValue(sliderId, 0)
+        state.size = 0
     end)
 end)
 
 task.spawn(function()
-    while true do
-        task.wait(1.5)
-        updateBalls()
+    local lastApplied = nil
+    local lastSaved = state.size
+    local lastRefresh = 0
+
+    while environment[STATE_KEY] == state do
+        if sliderInitialized then
+            local selected = UI.GetValue(sliderId)
+
+            if selected ~= nil then
+                state.size = selected / 10
+            end
+        end
+
+        local now = tick()
+
+        if state.size ~= lastApplied
+            or now - lastRefresh >= 1.5 then
+
+            updateBalls()
+            lastApplied = state.size
+            lastRefresh = now
+        end
+
+        if state.size ~= lastSaved then
+            saveSize()
+            lastSaved = state.size
+        end
+
+        task.wait(0.1)
     end
 end)
