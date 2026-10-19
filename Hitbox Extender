@@ -1,0 +1,81 @@
+local ballSize = 5.5
+local originalSizes = {}
+
+local function updateBalls()
+    local assets = game:GetService("ReplicatedStorage")
+        :FindFirstChild("Assets")
+    if not assets then return end
+
+    local balls = assets:FindFirstChild("Ball")
+    if not balls then return end
+
+    for _, model in balls:GetChildren() do
+        if model.ClassName == "Model" then
+            local parts = {}
+            local largest = 0
+
+            for _, part in model:GetDescendants() do
+                if part.ClassName == "MeshPart"
+                    or part.ClassName == "Part" then
+
+                    local id = part.Address
+                    originalSizes[id] = originalSizes[id] or part.Size
+
+                    local size = originalSizes[id]
+                    largest = math.max(largest, size.X, size.Y, size.Z)
+
+                    parts[#parts + 1] = part
+                end
+            end
+
+            if largest > 0 then
+                local scale = ballSize == 0 and 1 or ballSize / largest
+
+                for _, part in parts do
+                    local size = originalSizes[part.Address]
+
+                    part.Size = Vector3.new(
+                        size.X * scale,
+                        size.Y * scale,
+                        size.Z * scale
+                    )
+                end
+            end
+        end
+    end
+end
+
+UI.AddTab("Hitbox Extender", function(tab)
+    local main = tab:Section("Main Settings", "Left")
+
+    main:Text("Hitbox Extender")
+    main:Text("made by x9q5m")
+    main:Text("0 = Original size")
+    main:Spacing()
+
+    main:SliderFloat(
+        "ball_size",
+        "Ball Size",
+        0,
+        30,
+        ballSize,
+        "%.1f",
+        function(value)
+            ballSize = value
+            updateBalls()
+        end
+    )
+
+    main:Button("Reset to Original Size", function()
+        UI.SetValue("ball_size", 0)
+        ballSize = 0
+        updateBalls()
+    end)
+end)
+
+task.spawn(function()
+    while true do
+        updateBalls()
+        task.wait(1.5)
+    end
+end)
