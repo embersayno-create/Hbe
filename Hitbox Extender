@@ -6,14 +6,12 @@ local environment = getfenv()
 local previous = environment[STATE_KEY]
 
 local state = {
-    size = 5.5,
+    size = previous and previous.size or 5.5,
     originals = previous and previous.originals or {},
     generation = previous and previous.generation + 1 or 1
 }
 
-if previous then
-    state.size = previous.size
-else
+if not previous then
     pcall(function()
         if isfile(SAVE_FILE) then
             local saved = tonumber(readfile(SAVE_FILE))
@@ -27,10 +25,26 @@ end
 
 environment[STATE_KEY] = state
 
-local sliderId = "x9q5m_hitbox_size_" .. state.generation
-local initialSliderValue = math.floor(state.size * 10 + 0.5)
+local sliderId = "x9q5m_ball_size_" .. state.generation
+local initialSize = state.size
+local sliderInitialized = false
 
-state.size = initialSliderValue / 10
+local function sendNotification()
+    local text = "made by x9q5m | Size: "
+        .. string.format("%.1f", state.size)
+
+    if type(notify) == "function" then
+        pcall(notify, text, TITLE, 7)
+    else
+        pcall(function()
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = TITLE,
+                Text = text,
+                Duration = 7
+            })
+        end)
+    end
+end
 
 local function updateBalls()
     local assets = game:GetService("ReplicatedStorage")
@@ -97,33 +111,35 @@ local function saveSize()
     if not success then
         print("Hitbox Extender: could not save size:", message)
     end
+
+    return success
 end
 
 UI.RemoveTab(TITLE)
-
-local sliderInitialized = false
 
 UI.AddTab(TITLE, function(tab)
     local main = tab:Section("Main Settings", "Left")
 
     main:Text(TITLE)
     main:Text("made by x9q5m")
-    main:Text("Size setting: 55 = 5.5 studs")
     main:Text("0 = Original size")
     main:Spacing()
 
-    main:SliderInt(
+    main:SliderFloat(
         sliderId,
-        "Size (tenths of a stud)",
-        0,
-        300,
-        initialSliderValue
+        "Ball Size",
+        0.0,
+        30.0,
+        initialSize,
+        "%.1f"
     )
 
     if not sliderInitialized then
-        UI.SetValue(sliderId, initialSliderValue)
+        UI.SetValue(sliderId, initialSize)
         sliderInitialized = true
     end
+
+    main:Spacing()
 
     main:Button("Reset to Original Size", function()
         UI.SetValue(sliderId, 0)
@@ -131,17 +147,20 @@ UI.AddTab(TITLE, function(tab)
     end)
 end)
 
+sendNotification()
+
 task.spawn(function()
     local lastApplied = nil
     local lastSaved = state.size
     local lastRefresh = 0
+    local lastSaveAttempt = 0
 
     while environment[STATE_KEY] == state do
         if sliderInitialized then
             local selected = UI.GetValue(sliderId)
 
             if selected ~= nil then
-                state.size = selected / 10
+                state.size = selected
             end
         end
 
@@ -155,9 +174,14 @@ task.spawn(function()
             lastRefresh = now
         end
 
-        if state.size ~= lastSaved then
-            saveSize()
-            lastSaved = state.size
+        if state.size ~= lastSaved
+            and now - lastSaveAttempt >= 0.5 then
+
+            lastSaveAttempt = now
+
+            if saveSize() then
+                lastSaved = state.size
+            end
         end
 
         task.wait(0.1)
